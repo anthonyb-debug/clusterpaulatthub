@@ -947,6 +947,11 @@ var AGSCore = (function () {
 
   var H = {};
   H.whoami = { fn: function (ctx) { return { user: publicUser(ctx.user), serverTime: ctx.now, today: ctx.today, coreVersion: CORE_VERSION }; } };
+  // Days travel to the browser as { cols, rows } with only the fields the screens use. This keeps a full
+  // year (about 9,000 days) to roughly a fifth of the size of sending whole records.
+  var DAY_WIRE = ['DayID', 'AgentID', 'Date', 'Shift', 'CampaignID', 'Scheduled', 'Absent', 'Tardy', 'TardyWaived', 'WaiveReason', 'WaiveNote', 'WaivedBy',
+    'WaivedAt', 'EarlyOut', 'Leave', 'LeaveType', 'OT', 'Minutes', 'Notes', 'IsSynthetic', 'RecordVersion', 'ArchivedAt'];
+  function packDays(list) { return { cols: DAY_WIRE, rows: list.map(function (d) { return DAY_WIRE.map(function (c) { var v = d[c]; return v === undefined || v === null ? '' : v; }); }) }; }
   function daysForYear(ctx, year, inclArch) {
     var y = String(year || ctx.today.slice(0, 4));
     return ctx.repo.all('days').filter(function (d) { return s(d.Date).slice(0, 4) === y && (inclArch || live(d)) && ctx.visible('days', d); });
@@ -954,14 +959,14 @@ var AGSCore = (function () {
   H.bootstrap = { fn: function (ctx, p) {
     var inclArch = isAdmin(ctx.user) && !!p.includeArchived, out = {};
     ['campaigns', 'teamLeads', 'agents'].forEach(function (e) { out[e] = ctx.repo.all(e).filter(function (r) { return (inclArch || live(r)) && ctx.visible(e, r); }); });
-    out.days = daysForYear(ctx, p.year, inclArch); out.daysYear = String(p.year || ctx.today.slice(0, 4));
+    out.days = packDays(daysForYear(ctx, p.year, inclArch)); out.daysYear = String(p.year || ctx.today.slice(0, 4));
     out.users = isAdmin(ctx.user) ? ctx.repo.all('users') : ctx.repo.all('users').filter(function (r) { return s(r.Email).toLowerCase() === ctx.user.email; });
     out.settings = ctx.settings; out.user = publicUser(ctx.user); out.serverTime = ctx.now; out.today = ctx.today; out.coreVersion = CORE_VERSION;
     return out;
   } };
   H.getDays = { fn: function (ctx, p) {
     if (!/^\d{4}$/.test(s(p.year))) throw AgsError('VALIDATION', 'Choose a year.');
-    return { days: daysForYear(ctx, p.year, false), year: String(p.year) };
+    return { days: packDays(daysForYear(ctx, p.year, false)), year: String(p.year) };
   } };
   // ---------- attendance days ----------
   // Team Leads can change days within the last TeamLeadEditDays days (and any future day). Admins have no limit.
@@ -1245,8 +1250,14 @@ var AGSCore = (function () {
     return D;
   }
 
+  // Turns the compact { cols, rows } form back into full day records (missing fields = '').
+  function unpackDays(p) {
+    if (!p || Array.isArray(p)) return p || [];
+    return p.rows.map(function (r) { var o = blank('days'); p.cols.forEach(function (c, i) { o[c] = r[i] === null || r[i] === undefined ? '' : r[i]; }); return o; });
+  }
+
   return {
-    CORE_VERSION: CORE_VERSION, APP_NAME: APP_NAME, ROLES: ROLES, ROLE_LABELS: ROLE_LABELS, ASSIGNABLE_ROLES: ASSIGNABLE_ROLES, CAMPAIGN_ROLES: CAMPAIGN_ROLES,
+    CORE_VERSION: CORE_VERSION, unpackDays: unpackDays, APP_NAME: APP_NAME, ROLES: ROLES, ROLE_LABELS: ROLE_LABELS, ASSIGNABLE_ROLES: ASSIGNABLE_ROLES, CAMPAIGN_ROLES: CAMPAIGN_ROLES,
     ACTIVE_STATUSES: ACTIVE_STATUSES, WAIVE_REASONS: WAIVE_REASONS, LEAVE_TYPES: LEAVE_TYPES, TIERS: TIERS, WATCH: WATCH, SCHEMA: SCHEMA, META: META,
     ENTITIES: ENTITIES, DATA_ENTITIES: DATA_ENTITIES, DEFAULT_SETTINGS: DEFAULT_SETTINGS, FIELDS: FIELDS,
     AgsError: AgsError, s: s, n: n, b: b, isIsoDate: isIsoDate, addDays: addDays, diffDays: diffDays, json: json, arr: arr, rate: rate, fmtRate: fmtRate,
@@ -1384,6 +1395,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   function setData(d) {
     S.data = { settings: d.settings || {} };
     C.DATA_ENTITIES.concat(['users']).forEach(function (e) { S.data[e] = d[e] || []; });
+    S.data.days = C.unpackDays(d.days);
     S.settings = C.settingsWithDefaults(d.settings || {});
     if (d.user) { S.user = d.user; S.user.role = C.normRole(S.user.role); S.user.roleLabel = C.ROLE_LABELS[S.user.role] || S.user.roleLabel; }
     S.today = d.today || todayTz();
@@ -1522,7 +1534,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   function HttpTransport() { }
   HttpTransport.prototype.call = function (action, payload, requestId) {
     return getToken().then(function (tok) {
-      var ctl = window.AbortController ? new AbortController() : null, timer = setTimeout(function () { if (ctl) ctl.abort(); }, 45000);
+      var ctl = window.AbortController ? new AbortController() : null, timer = setTimeout(function () { if (ctl) ctl.abort(); }, /^(bootstrap|getDays)$/.test(action) ? 150000 : 45000);   // a full year of days can take a while
       return fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, credentials: 'omit', redirect: 'follow', signal: ctl ? ctl.signal : undefined,
         body: JSON.stringify({ action: action, payload: payload, requestId: requestId, idToken: tok }) })
         .then(function (r) {
@@ -1581,7 +1593,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   var Api = {
     read: function (action, payload) {
       var prev = S.sync.state; setSync('syncing');
-      return callWithRetry(action, payload, 3).then(function (r) { setSync(prev === 'conflict' || prev === 'failed' ? 'connected' : (prev === 'syncing' ? 'connected' : prev)); return r; },
+      return callWithRetry(action, payload, /^(bootstrap|getDays)$/.test(action) ? 1 : 3).then(function (r) { setSync(prev === 'conflict' || prev === 'failed' ? 'connected' : (prev === 'syncing' ? 'connected' : prev)); return r; },
         function (e) {
           if (e && e.code === 'UNAUTHENTICATED' && S.mode === 'http' && S.user) return reauth().then(function () { return Api.read(action, payload); });
           setSync(isRetryable(e) ? 'failed' : 'connected', e && e.message); throw e;
@@ -1830,7 +1842,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   function startServer(mode) {
     if (mode === 'demo') S.transport = S.demoT; else if (mode === 'http') S.transport = new HttpTransport(); else S.transport = new GasTransport();
     S.mode = mode;
-    $('#app').innerHTML = '<div class="loading" role="status"><span class="spinner"></span>Loading attendance…</div>';
+    $('#app').innerHTML = '<div class="loading" role="status"><span class="spinner"></span>Loading the year\'s attendance… This can take up to a minute.</div>';
     callWithRetry('bootstrap', {}, 3).then(function (d) {
       setData(d);
       S.sync.pending = lsGet(pendKey(), []) || [];
@@ -1875,7 +1887,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   CHG.gYear = function (el) {
     S.g.year = +el.value; if (S.loadedYear === S.g.year) { render(); return; }
     $('#page').innerHTML = '<div class="loading"><span class="spinner"></span>Loading ' + S.g.year + '…</div>';
-    Api.read('getDays', { year: S.g.year }).then(function (r) { S.data.days = r.days; S.loadedYear = +r.year; reindex(); render(); }, function (e) { toast('Could not load ' + S.g.year + ': ' + e.message, 'bad'); render(); });
+    Api.read('getDays', { year: S.g.year }).then(function (r) { S.data.days = C.unpackDays(r.days); S.loadedYear = +r.year; reindex(); render(); }, function (e) { toast('Could not load ' + S.g.year + ': ' + e.message, 'bad'); render(); });
   };
   CHG.gMonth = function (el) { S.g.month = +el.value; render(); };
   // ================= shell =================
