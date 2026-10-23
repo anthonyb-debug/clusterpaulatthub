@@ -466,10 +466,10 @@ table.t .group-h th{background:var(--surface);border-bottom:0;font-size:11.5px;c
 .day-strip .ds.is-today{box-shadow:inset 0 0 0 1.5px var(--t3);color:var(--t3);font-weight:700} .day-strip .ds.on{background:var(--accent);color:#fff;opacity:1}
 .trk-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
 .trk-foot{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line-2);flex-wrap:wrap;background:var(--surface)}
-.table-wrap.trk-wrap{max-height:calc(100vh - 300px);min-height:240px;overflow:auto} .trk thead th{position:sticky;top:0;background:var(--surface);z-index:1}
+.table-wrap.trk-wrap{max-height:calc(100vh - 300px);min-height:240px;overflow:auto} .trk thead th{position:sticky;top:0;background:var(--surface);z-index:2}
 .trk th.c,.trk td.c{text-align:center} .trk td{padding:3px 6px} .trk.comfy td{padding:9px 6px}
 .trk td.nm a{font-weight:700;color:var(--ink);text-decoration:none} .trk tr.off td.nm a,.trk tr.off td{color:var(--muted);font-weight:400}
-.trk tr.sel td{background:var(--accent-soft)} .trk tr.day-head td{background:var(--accent-soft);font-size:13px;border-top:2px solid var(--line)}
+.trk tr.sel td{background:var(--accent-soft)} .trk tr.day-head td{background:linear-gradient(var(--accent-soft),var(--accent-soft)),var(--surface);font-size:13px;border-top:2px solid var(--line);position:sticky;top:calc(var(--trk-head,38px) - 2px);z-index:1;box-shadow:0 1px 0 var(--line),0 -2px 0 var(--surface)}
 .trk tr.day-head .wd{color:var(--accent);font-weight:700} .cnt-bad{color:var(--t1);font-weight:700} .cnt-warn{color:var(--t2);font-weight:700}
 .trk td.mins{background:var(--surface-2);font-variant-numeric:tabular-nums}
 .cell-in{width:52px;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px;text-align:center;font:inherit;font-variant-numeric:tabular-nums;color:var(--ink)}
@@ -2212,6 +2212,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     var pg = rows.slice(f.page * size, f.page * size + size), body = '', lastDate = '', shifts = knownShifts();
     pg.forEach(function (d) {
       if (!f.sortKey && d.Date !== lastDate) {
+        if (lastDate) body += '</tbody><tbody>';
         lastDate = d.Date; var dayRows = rows.filter(function (x) { return x.Date === d.Date; }), sch = dayRows.filter(function (x) { return x.Scheduled !== ''; }).length;
         var ab = dayRows.filter(function (x) { return C.num0(x.Absent); }).length, lt = dayRows.filter(function (x) { return C.num0(x.Tardy); }).length, off = dayRows.length - sch;
         var edRows = dayRows.filter(canEditDay), allSel = edRows.length && edRows.every(function (x) { return trkSel[x.DayID]; });
@@ -2219,11 +2220,14 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
       }
       body += trRow(d, prefs, shifts);
     });
-    var table = '<div class="table-wrap trk-wrap"><table class="t trk' + (prefs.comfy ? ' comfy' : '') + '">' + head + '<tbody>' + body + '</tbody></table></div>' + (rows.length > size ? pager('tracker', f, rows.length, size) : '');
+    var table = '<div class="table-wrap trk-wrap" id="trk-wrap"><table class="t trk' + (prefs.comfy ? ' comfy' : '') + '">' + head + '<tbody>' + body + '</tbody></table></div>' + (rows.length > size ? pager('tracker', f, rows.length, size) : '');
     var foot = '<div class="trk-foot">' + (editable ? '<button class="btn btn-primary btn-sm" data-act="addDay">+ Add row</button>' : '') + (nSel ? '' : '<span class="small muted">Grey columns calculate automatically. Changes save to the server as soon as you leave a cell.</span>') +
       (nSel ? '<span class="row" style="gap:6px;margin-left:auto;flex-wrap:wrap"><span class="small muted">' + nSel + ' selected</span><button class="btn btn-sm btn-ghost" data-act="bulkNone">Clear selection</button><button class="btn btn-sm" data-act="bulkShift">Batch edit schedule (' + nSel + ')</button><button class="btn btn-sm" data-act="bulk" data-v="off">Mark OFF</button><button class="btn btn-sm" data-act="bulk" data-v="absent">Mark Absent</button><button class="btn btn-sm" data-act="bulk" data-v="leave">Mark Leave</button><button class="btn btn-sm" data-act="bulk" data-v="clear">Clear day</button><button class="btn btn-sm btn-danger" data-act="bulkDelete">Delete selected (' + nSel + ')</button></span>' : '') + '</div>';
     if (!rows.length) return strip + '<section class="panel">' + toolbar + emptyState(f.day === 'today' ? 'Nobody is scheduled today in this view' : 'No rows for these filters', editable ? 'Add a row, generate a schedule, or import from Excel.' : 'Choose another month.') + foot + '</section>';
-    return strip + '<section class="panel">' + toolbar + table + foot + '</section>';
+    // pin each date header just below the column headings
+    return { html: strip + '<section class="panel">' + toolbar + table + foot + '</section>', mount: function () {
+      var w = document.getElementById('trk-wrap'), th = w && w.querySelector('thead'); if (th) w.style.setProperty('--trk-head', th.getBoundingClientRect().height + 'px');
+    } };
   };
   function cid(d, k) { return 'c-' + d.DayID + '-' + k; }
   function trRow(d, prefs, shifts) {
