@@ -1439,7 +1439,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
 <script>
 
 /* =====================================================================
- * AGS Attendance HUB — APPLICATION
+ * AGS COACHING HUB — APPLICATION
  * ===================================================================== */
 (function () {
   'use strict';
@@ -2126,24 +2126,19 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
       camps.map(function (x) { return '<tr><td class="t-title">' + esc(x.c.Name) + '</td><td class="num">' + x.agents + '</td><td class="num">' + x.s.absent.toLocaleString() + '</td><td class="num">' + x.s.tardy.toLocaleString() + '</td><td class="num">' + x.s.early.toLocaleString() + '</td><td class="num">' + x.s.loss.toLocaleString() + '</td><td class="num ' + tierCls(x.s.attendance) + '"><b>' + pctTxt(x.s.attendance) + '</b></td><td class="num">' + pctTxt(x.s.shrinkage) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
     // by agent, grouped by campaign
     var sortKey = f.sort, dir = f.dir;
-    var val = function (r) { var x = r.summary; return { name: r.name, absent: x.absent, tardy: x.tardy, late: x.countedLate, early: x.early, loss: x.loss, attendance: x.attendance === null ? -1 : x.attendance, shrinkage: x.shrinkage === null ? -1 : x.shrinkage }[sortKey]; };
+    var val = function (r) { var x = r.summary; return { name: r.name, campaign: campName(r.campaignId) + ' ' + r.name, absent: x.absent, tardy: x.tardy, late: x.countedLate, early: x.early, loss: x.loss, attendance: x.attendance === null ? -1 : x.attendance, shrinkage: x.shrinkage === null ? -1 : x.shrinkage }[sortKey]; };
     var th = function (k, l, num) { return '<th class="' + (num ? 'num ' : '') + 'sortable"><button class="th-btn" data-act="dashSort" data-k="' + k + '">' + esc(l) + (sortKey === k ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</button></th>'; };
-    var agentRowsHtml = '', total = C.summarize([], today), totalDays = [];
-    camps.forEach(function (x) {
-      var rs = rows.filter(function (r) { return days.some(function (d) { return d.AgentID === r.agentId && d.CampaignID === x.c.CampaignID && C.countable(d, today); }); });
-      rs.sort(function (a, b) { var va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * dir || (a.name < b.name ? -1 : 1); });
-      agentRowsHtml += '<tr class="grp"><td>' + esc(x.c.Name) + ' <span class="t-sub" style="font-weight:400">' + rs.length + ' agents</span></td><td colspan="5"></td><td class="num ' + tierCls(x.s.attendance) + '">' + pctTxt(x.s.attendance) + '</td><td class="num">' + pctTxt(x.s.shrinkage) + '</td></tr>';
-      agentRowsHtml += rs.map(function (r) { var s2 = r.summary; return '<tr class="click" tabindex="0" data-act="goAgent" data-id="' + esc(r.agentId) + '"><td class="t-title">' + esc(r.name) + '</td><td class="num">' + s2.absent.toLocaleString() + '</td><td class="num">' + s2.tardy.toLocaleString() + '</td><td class="num">' + s2.countedLate + '</td><td class="num">' + s2.early.toLocaleString() + '</td><td class="num">' + s2.loss.toLocaleString() + '</td><td class="num ' + tierCls(s2.attendance) + '"><b>' + pctTxt(s2.attendance) + '</b></td><td class="num">' + pctTxt(s2.shrinkage) + '</td></tr>'; }).join('');
-      totalDays = totalDays.concat(days.filter(function (d) { return d.CampaignID === x.c.CampaignID; }));
-    });
-    total = C.summarize(totalDays, today);
-    var agentTable = '<section class="panel"><div class="panel-h"><div><h2>By agent</h2><span class="sub">Minutes unless noted. Open an agent for scheduled days and leave.</span></div></div><div class="table-wrap" style="max-height:560px;overflow:auto"><table class="t"><thead><tr>' + th('name', 'Agent') + th('absent', 'Absent', 1) + th('tardy', 'Tardy', 1) + th('late', 'Late arrivals', 1) + th('early', 'Early out', 1) + th('loss', 'Loss', 1) + th('attendance', 'Attendance', 1) + th('shrinkage', 'Shrinkage', 1) + '</tr></thead><tbody>' + agentRowsHtml +
-      '<tr class="tot"><td>' + (S.g.campaignId ? esc(campName(S.g.campaignId)) + ' total' : 'Team total') + '</td><td class="num">' + total.absent.toLocaleString() + '</td><td class="num">' + total.tardy.toLocaleString() + '</td><td class="num">' + total.countedLate + '</td><td class="num">' + total.early.toLocaleString() + '</td><td class="num">' + total.loss.toLocaleString() + '</td><td class="num ' + tierCls(total.attendance) + '">' + pctTxt(total.attendance) + '</td><td class="num">' + pctTxt(total.shrinkage) + '</td></tr></tbody></table></div></section>';
+    // one flat list of agents (not grouped by campaign); the header's campaign selector filters it
+    var list2 = rows.filter(function (r) { return r.summary.days; }).sort(function (a, b) { var va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * dir || (a.name < b.name ? -1 : 1); });
+    var agentRowsHtml = list2.map(function (r) { var s2 = r.summary; return '<tr class="click" tabindex="0" data-act="goAgent" data-id="' + esc(r.agentId) + '"><td class="t-title">' + esc(r.name) + '</td><td class="muted">' + esc(campName(r.campaignId)) + '</td><td class="num">' + s2.absent.toLocaleString() + '</td><td class="num">' + s2.tardy.toLocaleString() + '</td><td class="num">' + s2.countedLate + '</td><td class="num">' + s2.early.toLocaleString() + '</td><td class="num">' + s2.loss.toLocaleString() + '</td><td class="num ' + tierCls(s2.attendance) + '"><b>' + pctTxt(s2.attendance) + '</b></td><td class="num">' + pctTxt(s2.shrinkage) + '</td></tr>'; }).join('');
+    var total = sm;
+    var agentTable = '<section class="panel"><div class="panel-h"><div><h2>By agent</h2><span class="sub">' + list2.length + ' agents. Minutes unless noted. Open an agent for scheduled days and leave.</span></div></div><div class="table-wrap" style="max-height:560px;overflow:auto"><table class="t"><thead><tr>' + th('name', 'Agent') + th('campaign', 'Campaign') + th('absent', 'Absent', 1) + th('tardy', 'Tardy', 1) + th('late', 'Late arrivals', 1) + th('early', 'Early out', 1) + th('loss', 'Loss', 1) + th('attendance', 'Attendance', 1) + th('shrinkage', 'Shrinkage', 1) + '</tr></thead><tbody>' + agentRowsHtml +
+      '<tr class="tot"><td>' + (S.g.campaignId ? esc(campName(S.g.campaignId)) + ' total' : 'Team total') + '</td><td></td><td class="num">' + total.absent.toLocaleString() + '</td><td class="num">' + total.tardy.toLocaleString() + '</td><td class="num">' + total.countedLate + '</td><td class="num">' + total.early.toLocaleString() + '</td><td class="num">' + total.loss.toLocaleString() + '</td><td class="num ' + tierCls(total.attendance) + '">' + pctTxt(total.attendance) + '</td><td class="num">' + pctTxt(total.shrinkage) + '</td></tr></tbody></table></div></section>';
     return strip + '<div class="stack" style="gap:16px">' + att + chart + campTable + agentTable + '</div>' +
       '<p class="small muted" style="margin-top:12px;max-width:640px">Counts days up to yesterday, plus today for agents who already have something logged (today\'s numbers are provisional until the day ends). Future scheduled days aren\'t counted. Loss = absent + tardy + early out. Attendance = (scheduled − loss) ÷ scheduled. Leave and waived tardiness are credited and not counted as loss; OFF days are excluded.</p>';
   };
   ACT.dashMetric = function (el) { S.f.dashboard.metric = el.dataset.v; render(); };
-  ACT.dashSort = function (el) { var f = S.f.dashboard, k = el.dataset.k; if (f.sort === k) f.dir = -f.dir; else { f.sort = k; f.dir = k === 'name' ? 1 : -1; } render(); };
+  ACT.dashSort = function (el) { var f = S.f.dashboard, k = el.dataset.k; if (f.sort === k) f.dir = -f.dir; else { f.sort = k; f.dir = k === 'name' || k === 'campaign' ? 1 : -1; } render(); };
   ACT.monthDrill = function (el) { setPeriod(+el.dataset.key.slice(0, 4), +el.dataset.key.slice(5, 7)); };
   ACT.goAgent = function (el) { closeAllModals(); go('agent', el.dataset.id); };
 
