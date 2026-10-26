@@ -471,7 +471,7 @@ table.t .group-h th{background:var(--surface);border-bottom:0;font-size:11.5px;c
 .trk td.nm a{font-weight:700;color:var(--ink);text-decoration:none} .trk tr.off td.nm a,.trk tr.off td{color:var(--muted);font-weight:400}
 .trk tr.sel td{background:var(--accent-soft)} .trk tr.day-head td{background:linear-gradient(var(--accent-soft),var(--accent-soft)),var(--surface);font-size:13px;border-top:2px solid var(--line);position:sticky;top:calc(var(--trk-head,38px) - 2px);z-index:1;box-shadow:0 1px 0 var(--line),0 -2px 0 var(--surface)}
 .trk tr.day-head .wd{color:var(--accent);font-weight:700} .cnt-bad{color:var(--t1);font-weight:700} .cnt-warn{color:var(--t2);font-weight:700}
-.trk td.mins{background:var(--surface-2);font-variant-numeric:tabular-nums}
+.trk td.mins{background:var(--surface-2);font-variant-numeric:tabular-nums} .trk td.nm.is-today{box-shadow:inset 3px 0 0 var(--t3)}
 .cell-in{width:52px;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px;text-align:center;font:inherit;font-variant-numeric:tabular-nums;color:var(--ink)}
 .cell-in:hover:not([disabled]),.cell-in:focus{border-color:var(--line);background:var(--surface)} .cell-in.late{color:var(--t2);font-weight:700} .cell-in.waived{text-decoration:line-through;color:var(--muted)}
 .cell-sel{border:1px solid transparent;background:transparent;border-radius:6px;padding:3px 6px;font:inherit;color:var(--ink);text-align:center;text-align-last:center;-webkit-appearance:none;appearance:none;cursor:pointer} .cell-sel:hover,.cell-sel:focus{border-color:var(--line);background:var(--surface)}
@@ -1439,7 +1439,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
 <script>
 
 /* =====================================================================
- * AGS COACHING HUB — APPLICATION
+ * AGS Attendance HUB — APPLICATION
  * ===================================================================== */
 (function () {
   'use strict';
@@ -2125,12 +2125,11 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     var campTable = '<section class="panel"><div class="panel-h"><h2>By campaign</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Campaign</th><th class="num">Agents</th><th class="num">Absent min</th><th class="num">Tardy min</th><th class="num">Early-out min</th><th class="num">Loss min</th><th class="num">Attendance</th><th class="num">Shrinkage</th></tr></thead><tbody>' +
       camps.map(function (x) { return '<tr><td class="t-title">' + esc(x.c.Name) + '</td><td class="num">' + x.agents + '</td><td class="num">' + x.s.absent.toLocaleString() + '</td><td class="num">' + x.s.tardy.toLocaleString() + '</td><td class="num">' + x.s.early.toLocaleString() + '</td><td class="num">' + x.s.loss.toLocaleString() + '</td><td class="num ' + tierCls(x.s.attendance) + '"><b>' + pctTxt(x.s.attendance) + '</b></td><td class="num">' + pctTxt(x.s.shrinkage) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
     // by agent, grouped by campaign
-    var tabs = '<span class="seg" style="margin-left:auto"><button data-act="dashTab" data-v="" aria-pressed="' + !f.tab + '">All</button>' + camps.map(function (x) { return '<button data-act="dashTab" data-v="' + esc(x.c.CampaignID) + '" aria-pressed="' + (f.tab === x.c.CampaignID) + '">' + esc(x.c.Name) + '</button>'; }).join('') + '</span>';
     var sortKey = f.sort, dir = f.dir;
     var val = function (r) { var x = r.summary; return { name: r.name, absent: x.absent, tardy: x.tardy, late: x.countedLate, early: x.early, loss: x.loss, attendance: x.attendance === null ? -1 : x.attendance, shrinkage: x.shrinkage === null ? -1 : x.shrinkage }[sortKey]; };
     var th = function (k, l, num) { return '<th class="' + (num ? 'num ' : '') + 'sortable"><button class="th-btn" data-act="dashSort" data-k="' + k + '">' + esc(l) + (sortKey === k ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</button></th>'; };
     var agentRowsHtml = '', total = C.summarize([], today), totalDays = [];
-    camps.filter(function (x) { return !f.tab || x.c.CampaignID === f.tab; }).forEach(function (x) {
+    camps.forEach(function (x) {
       var rs = rows.filter(function (r) { return days.some(function (d) { return d.AgentID === r.agentId && d.CampaignID === x.c.CampaignID && C.countable(d, today); }); });
       rs.sort(function (a, b) { var va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * dir || (a.name < b.name ? -1 : 1); });
       agentRowsHtml += '<tr class="grp"><td>' + esc(x.c.Name) + ' <span class="t-sub" style="font-weight:400">' + rs.length + ' agents</span></td><td colspan="5"></td><td class="num ' + tierCls(x.s.attendance) + '">' + pctTxt(x.s.attendance) + '</td><td class="num">' + pctTxt(x.s.shrinkage) + '</td></tr>';
@@ -2138,13 +2137,12 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
       totalDays = totalDays.concat(days.filter(function (d) { return d.CampaignID === x.c.CampaignID; }));
     });
     total = C.summarize(totalDays, today);
-    var agentTable = '<section class="panel"><div class="panel-h"><div><h2>By agent</h2><span class="sub">Minutes unless noted. Open an agent for scheduled days and leave.</span></div>' + tabs + '</div><div class="table-wrap" style="max-height:560px;overflow:auto"><table class="t"><thead><tr>' + th('name', 'Agent') + th('absent', 'Absent', 1) + th('tardy', 'Tardy', 1) + th('late', 'Late arrivals', 1) + th('early', 'Early out', 1) + th('loss', 'Loss', 1) + th('attendance', 'Attendance', 1) + th('shrinkage', 'Shrinkage', 1) + '</tr></thead><tbody>' + agentRowsHtml +
-      '<tr class="tot"><td>' + (f.tab ? esc(campName(f.tab)) + ' total' : 'Team total') + '</td><td class="num">' + total.absent.toLocaleString() + '</td><td class="num">' + total.tardy.toLocaleString() + '</td><td class="num">' + total.countedLate + '</td><td class="num">' + total.early.toLocaleString() + '</td><td class="num">' + total.loss.toLocaleString() + '</td><td class="num ' + tierCls(total.attendance) + '">' + pctTxt(total.attendance) + '</td><td class="num">' + pctTxt(total.shrinkage) + '</td></tr></tbody></table></div></section>';
+    var agentTable = '<section class="panel"><div class="panel-h"><div><h2>By agent</h2><span class="sub">Minutes unless noted. Open an agent for scheduled days and leave.</span></div></div><div class="table-wrap" style="max-height:560px;overflow:auto"><table class="t"><thead><tr>' + th('name', 'Agent') + th('absent', 'Absent', 1) + th('tardy', 'Tardy', 1) + th('late', 'Late arrivals', 1) + th('early', 'Early out', 1) + th('loss', 'Loss', 1) + th('attendance', 'Attendance', 1) + th('shrinkage', 'Shrinkage', 1) + '</tr></thead><tbody>' + agentRowsHtml +
+      '<tr class="tot"><td>' + (S.g.campaignId ? esc(campName(S.g.campaignId)) + ' total' : 'Team total') + '</td><td class="num">' + total.absent.toLocaleString() + '</td><td class="num">' + total.tardy.toLocaleString() + '</td><td class="num">' + total.countedLate + '</td><td class="num">' + total.early.toLocaleString() + '</td><td class="num">' + total.loss.toLocaleString() + '</td><td class="num ' + tierCls(total.attendance) + '">' + pctTxt(total.attendance) + '</td><td class="num">' + pctTxt(total.shrinkage) + '</td></tr></tbody></table></div></section>';
     return strip + '<div class="stack" style="gap:16px">' + att + chart + campTable + agentTable + '</div>' +
       '<p class="small muted" style="margin-top:12px;max-width:640px">Counts days up to yesterday, plus today for agents who already have something logged (today\'s numbers are provisional until the day ends). Future scheduled days aren\'t counted. Loss = absent + tardy + early out. Attendance = (scheduled − loss) ÷ scheduled. Leave and waived tardiness are credited and not counted as loss; OFF days are excluded.</p>';
   };
   ACT.dashMetric = function (el) { S.f.dashboard.metric = el.dataset.v; render(); };
-  ACT.dashTab = function (el) { S.f.dashboard.tab = el.dataset.v; render(); };
   ACT.dashSort = function (el) { var f = S.f.dashboard, k = el.dataset.k; if (f.sort === k) f.dir = -f.dir; else { f.sort = k; f.dir = k === 'name' ? 1 : -1; } render(); };
   ACT.monthDrill = function (el) { setPeriod(+el.dataset.key.slice(0, 4), +el.dataset.key.slice(5, 7)); };
   ACT.goAgent = function (el) { closeAllModals(); go('agent', el.dataset.id); };
@@ -2156,7 +2154,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     if (!a) return self ? '<div class="note warn">Your account is not linked to an agent profile yet. Ask an Admin to link it.</div>' : '<div class="note bad">Agent not found. <a href="#/dashboard">Back to the dashboard</a></div>';
     var y = C.agentYear(S.data, id, S.g.year, S.today), monthF = viewFilter({ agentId: id, campaignId: '' }), sm = C.summarize(S.data.days.filter(C.dayFilter(monthF, S.idx)), S.today);
     var mrows = y.months.map(function (m) { var x = m.summary; return '<tr' + (m.month === S.g.month ? ' style="background:var(--accent-soft)"' : '') + '><td>' + esc(MONTH_NAMES[m.month - 1]) + '</td><td class="num"><b>' + pct(x.attendance) + '</b></td><td>' + tierPill(x.attendance) + '</td><td class="num">' + pct(x.shrinkage) + '</td><td class="num">' + (x.absentDays || '—') + '</td><td class="num">' + (x.countedLate || '—') + '</td><td class="num">' + mins(x.tardy) + '</td><td class="num">' + mins(x.early) + '</td><td class="num">' + (x.leaveDays || '—') + '</td><td>' + watchPill(m.watch) + '</td></tr>'; }).join('');
-    var days = S.data.days.filter(C.dayFilter(monthF, S.idx)).sort(function (p, q) { return p.Date < q.Date ? 1 : -1; });
+    var days = S.data.days.filter(C.dayFilter(monthF, S.idx)).sort(function (p, q) { return p.Date < q.Date ? -1 : 1; });
     var dayRows = days.map(function (d) {
       var st = [], counted = C.countable(d, S.today);
       if (C.num0(d.Absent)) st.push('<span class="b bad">Absent</span>'); if (C.num0(d.Leave)) st.push('<span class="b info">' + esc(d.LeaveType || 'Leave') + '</span>');
@@ -2169,7 +2167,8 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
       '<div class="stats" style="margin-bottom:16px">' + stat(periodLabel() + ' attendance', pct(sm.attendance)) + stat('KPI tier', sm.tier ? sm.tier.label : '—') + stat('Absences', sm.absentDays) + stat('Late arrivals (counted)', sm.countedLate + ' · ' + mins(sm.tardy) + ' min') + stat('Early outs', sm.earlyCount) + stat('Leave days', sm.leaveDays) + '</div>' +
       '<section class="panel"><div class="panel-h"><h2>' + S.g.year + ' month by month</h2><span class="sub">Tardy status is per month: watchlist at 6 counted lates or 60 counted minutes; approaching at 3–5 lates or 30–59 minutes.</span></div>' +
       (mrows ? '<div class="table-wrap"><table class="t"><thead><tr><th>Month</th><th class="num">Attendance</th><th>Tier</th><th class="num">Shrinkage</th><th class="num">Absent days</th><th class="num">Lates</th><th class="num">Late min.</th><th class="num">Early out min.</th><th class="num">Leave days</th><th>Tardy status</th></tr></thead><tbody>' + mrows + '</tbody></table></div>' : emptyState('No attendance in ' + S.g.year, '')) + '</section>' +
-      '<section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Days, ' + esc(periodLabel()) + '</h2><span class="sub">Minutes worked out of scheduled minutes.</span></div>' + (dayRows ? '<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Shift</th><th>Status</th><th class="num">Minutes</th></tr></thead><tbody>' + dayRows + '</tbody></table></div>' : emptyState('No days in this period', '')) + '</section>';
+      '<section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Days, ' + esc(periodLabel()) + '</h2><span class="sub">' + (!self && (cap('record') || cap('waive')) ? 'Edit this agent\'s days here, the same way as in the Tracker.' : 'Minutes worked out of scheduled minutes.') + '</span></div>' +
+      (!days.length ? emptyState('No days in this period', '') : !self && (cap('record') || cap('waive')) ? agentDaysEditor(days) : '<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Shift</th><th>Status</th><th class="num">Minutes</th></tr></thead><tbody>' + dayRows + '</tbody></table></div>') + '</section>';
   }
 
   // ================= tracker (same layout as the original Attendance Hub, with Absent / Leave buttons) =================
@@ -2222,15 +2221,28 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     });
     var table = '<div class="table-wrap trk-wrap" id="trk-wrap"><table class="t trk' + (prefs.comfy ? ' comfy' : '') + '">' + head + '<tbody>' + body + '</tbody></table></div>' + (rows.length > size ? pager('tracker', f, rows.length, size) : '');
     var foot = '<div class="trk-foot">' + (editable ? '<button class="btn btn-primary btn-sm" data-act="addDay">+ Add row</button>' : '') + (nSel ? '' : '<span class="small muted">Grey columns calculate automatically. Changes save to the server as soon as you leave a cell.</span>') +
-      (nSel ? '<span class="row" style="gap:6px;margin-left:auto;flex-wrap:wrap"><span class="small muted">' + nSel + ' selected</span><button class="btn btn-sm btn-ghost" data-act="bulkNone">Clear selection</button><button class="btn btn-sm" data-act="bulkShift">Batch edit schedule (' + nSel + ')</button><button class="btn btn-sm" data-act="bulk" data-v="off">Mark OFF</button><button class="btn btn-sm" data-act="bulk" data-v="absent">Mark Absent</button><button class="btn btn-sm" data-act="bulk" data-v="leave">Mark Leave</button><button class="btn btn-sm" data-act="bulk" data-v="clear">Clear day</button><button class="btn btn-sm btn-danger" data-act="bulkDelete">Delete selected (' + nSel + ')</button></span>' : '') + '</div>';
+      (nSel ? bulkBar(nSel) : '') + '</div>';
     if (!rows.length) return strip + '<section class="panel">' + toolbar + emptyState(f.day === 'today' ? 'Nobody is scheduled today in this view' : 'No rows for these filters', editable ? 'Add a row, generate a schedule, or import from Excel.' : 'Choose another month.') + foot + '</section>';
     // pin each date header just below the column headings
     return { html: strip + '<section class="panel">' + toolbar + table + foot + '</section>', mount: function () {
       var w = document.getElementById('trk-wrap'), th = w && w.querySelector('thead'); if (th) w.style.setProperty('--trk-head', th.getBoundingClientRect().height + 'px');
     } };
   };
+  function bulkBar(nSel) {
+    return '<span class="row" style="gap:6px;margin-left:auto;flex-wrap:wrap"><span class="small muted">' + nSel + ' selected</span><button class="btn btn-sm btn-ghost" data-act="bulkNone">Clear selection</button><button class="btn btn-sm" data-act="bulkShift">Batch edit schedule (' + nSel + ')</button><button class="btn btn-sm" data-act="bulk" data-v="off">Mark OFF</button><button class="btn btn-sm" data-act="bulk" data-v="absent">Mark Absent</button><button class="btn btn-sm" data-act="bulk" data-v="leave">Mark Leave</button><button class="btn btn-sm" data-act="bulk" data-v="clear">Clear day</button><button class="btn btn-sm btn-danger" data-act="bulkDelete">Delete selected (' + nSel + ')</button></span>';
+  }
+  // Editable days for one agent (agent page): same controls as the Tracker, oldest day first.
+  function agentDaysEditor(days) {
+    var prefs = trkPrefs(), shifts = knownShifts();
+    Object.keys(trkSel).forEach(function (id) { if (!days.some(function (d) { return d.DayID === id; })) delete trkSel[id]; });
+    var ed = days.filter(canEditDay), nSel = Object.keys(trkSel).length, allSel = ed.length && ed.every(function (x) { return trkSel[x.DayID]; });
+    var head = '<thead><tr><th style="width:34px"><input type="checkbox" aria-label="Select all days" data-change="agSelAll"' + (allSel ? ' checked' : '') + (ed.length ? '' : ' disabled') + '></th><th>Date</th><th class="c">Shift</th><th class="c">Absent</th><th class="c">Tardy</th>' + (prefs.early ? '<th class="c">Early out</th>' : '') + '<th class="c">Leave</th>' + (prefs.ot ? '<th class="c">OT</th>' : '') + '<th class="c">Minutes</th><th style="width:30px"></th></tr></thead>';
+    return '<div class="table-wrap"><table class="t trk' + (prefs.comfy ? ' comfy' : '') + '">' + head + '<tbody>' + days.map(function (d) { return trRow(d, prefs, shifts, 'agent'); }).join('') + '</tbody></table></div>' +
+      '<div class="trk-foot">' + (nSel ? bulkBar(nSel) : '<span class="small muted">' + (cap('record') ? 'Changes save as soon as you leave a cell. Tick days to mark several at once.' : 'Grey columns calculate automatically.') + '</span>') + '</div>';
+  }
+  CHG.agSelAll = function (el) { S.data.days.filter(function (d) { return C.live(d) && d.AgentID === S.params.id && C.dayFilter(viewFilter({ agentId: S.params.id, campaignId: '' }), S.idx)(d) && canEditDay(d); }).forEach(function (d) { if (el.checked) trkSel[d.DayID] = 1; else delete trkSel[d.DayID]; }); render(); };
   function cid(d, k) { return 'c-' + d.DayID + '-' + k; }
-  function trRow(d, prefs, shifts) {
+  function trRow(d, prefs, shifts, mode) {
     prefs = prefs || trkPrefs(); shifts = shifts || knownShifts();
     var ed = canEditDay(d), sched = d.Scheduled !== '', dis = ed ? '' : ' disabled';
     var absent = C.num0(d.Absent), leave = C.num0(d.Leave), partial = absent && absent !== C.num0(d.Scheduled), whole = absent || leave;
@@ -2238,8 +2250,9 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     var waive = C.num0(d.Tardy) && cap('waive') ? '<button class="shield" data-act="trkWaive" data-id="' + esc(d.DayID) + '" aria-pressed="' + C.b(d.TardyWaived) + '" title="' + esc(C.b(d.TardyWaived) ? 'Waived: ' + d.WaiveReason + (d.WaiveNote ? ' (' + d.WaiveNote + ')' : '') + '. Click to remove the waiver.' : 'Waive this tardy') + '" aria-label="' + (C.b(d.TardyWaived) ? 'Remove waiver' : 'Waive tardy') + '">&#x1F6E1;&#xFE0E;</button>' : '';
     var shOpts = ['OFF'].concat(shifts.indexOf(d.Shift) < 0 && d.Shift && d.Shift !== 'OFF' ? [d.Shift] : []).concat(shifts).concat(['NOT YET HIRED']);
     var shiftCell = ed ? '<select id="' + cid(d, 'Shift') + '" class="cell-sel" aria-label="Shift" data-change="trkShift" data-id="' + esc(d.DayID) + '">' + opts(shOpts, d.Shift || 'OFF') + '<option value="__new">➕ Other shift…</option></select>' : esc(d.Shift || 'OFF');
-    return '<tr id="row-' + esc(d.DayID) + '" class="' + (sched ? '' : 'off ') + (trkSel[d.DayID] ? 'sel ' : '') + (d.Date > S.today ? 'future' : '') + '"><td><input type="checkbox" aria-label="Select ' + esc(agName(d.AgentID)) + ' ' + d.Date + '" data-change="trkSel" data-id="' + esc(d.DayID) + '"' + (trkSel[d.DayID] ? ' checked' : '') + (ed ? '' : ' disabled') + '></td>' +
-      '<td class="nm"><a href="#/agent/' + esc(d.AgentID) + '">' + esc(agName(d.AgentID)) + '</a></td><td class="muted">' + esc(campName(d.CampaignID)) + '</td><td class="c">' + shiftCell + '</td>' +
+    var lead = mode === 'agent' ? '<td class="nm' + (d.Date === S.today ? ' is-today' : '') + '">' + fmtDay(d.Date) + '</td>' : '<td class="nm"><a href="#/agent/' + esc(d.AgentID) + '">' + esc(agName(d.AgentID)) + '</a></td><td class="muted">' + esc(campName(d.CampaignID)) + '</td>';
+    return '<tr id="row-' + esc(d.DayID) + '"' + (mode ? ' data-mode="' + mode + '"' : '') + ' class="' + (sched ? '' : 'off ') + (trkSel[d.DayID] ? 'sel ' : '') + (d.Date > S.today ? 'future' : '') + '"><td><input type="checkbox" aria-label="Select ' + esc(agName(d.AgentID)) + ' ' + d.Date + '" data-change="trkSel" data-id="' + esc(d.DayID) + '"' + (trkSel[d.DayID] ? ' checked' : '') + (ed ? '' : ' disabled') + '></td>' +
+      lead + '<td class="c">' + shiftCell + '</td>' +
       '<td class="c">' + (partial ? '<span class="partial" title="A partial absence from the old app. New absences are full days.">' + absent + 'm</span> ' : '') + (sched ? '<button class="tog abs" id="' + cid(d, 'Absent') + '" data-act="trkToggle" data-id="' + esc(d.DayID) + '" data-k="Absent" aria-pressed="' + (absent > 0) + '"' + dis + '>Absent</button>' : '') + '</td>' +
       '<td class="c"><span class="row" style="gap:2px;flex-wrap:nowrap;justify-content:center">' + (sched ? numIn('Tardy', d.Tardy, !whole, C.num0(d.Tardy) && !C.b(d.TardyWaived) ? 'late' : C.b(d.TardyWaived) ? 'waived' : '') + waive : '') + '</span></td>' +
       (prefs.early ? '<td class="c">' + (sched ? numIn('EarlyOut', d.EarlyOut, !whole, C.num0(d.EarlyOut) ? 'late' : '') : '') + '</td>' : '') +
@@ -2261,7 +2274,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     var tr = document.getElementById('row-' + id), d = dayById(id); if (!tr || !d) { render(); return; }
     var active = document.activeElement, focusId = active && tr.contains(active) ? active.id : null, sel = focusId && active.selectionStart;
     var typed = {}; $$('input', tr).forEach(function (i) { if (i.id && i.dataset.k && i.dataset.dirty) typed[i.id] = i.value; });
-    var tmp = document.createElement('tbody'); tmp.innerHTML = trRow(d); var nr = tmp.firstChild; tr.parentNode.replaceChild(nr, tr);
+    var tmp = document.createElement('tbody'); tmp.innerHTML = trRow(d, null, null, tr.dataset.mode); var nr = tmp.firstChild; tr.parentNode.replaceChild(nr, tr);
     Object.keys(typed).forEach(function (k) { var i = document.getElementById(k); if (i) { i.value = typed[k]; i.dataset.dirty = '1'; } });
     if (cls) nr.classList.add(cls);
     if (focusId) { var f2 = document.getElementById(focusId); if (f2) { f2.focus(); try { f2.setSelectionRange(sel, sel); } catch (x) { } } }
