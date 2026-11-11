@@ -618,7 +618,8 @@ var AGSCore = (function () {
   var DEFAULT_SETTINGS = {
     Timezone: ['Asia/Manila', 'IANA timezone used for "today" and display.'],
     Environment: ['PROTOTYPE', 'PROTOTYPE or PRODUCTION. Destructive synthetic-data functions refuse to run in PRODUCTION.'],
-    TeamLeadEditDays: ['31', 'How many days back a Team Lead can change attendance (0 = no limit). Admins have no limit.']
+    TeamLeadEditDays: ['31', 'How many days back a Team Lead can change attendance (0 = no limit). Admins have no limit.'],
+    SessionHours: ['12', 'How long people stay signed in after signing in with Google (hours, 1–168). Removing someone\'s access still takes effect immediately.']
   };
 
   // ------------------------------------------------------------------ helpers
@@ -1225,7 +1226,8 @@ var AGSCore = (function () {
   var SETTING_RULES = {
     Timezone: function (v) { return /^(UTC|[A-Za-z]+(\/[A-Za-z0-9_+\-]+){1,2})$/.test(v) ? '' : 'Enter an IANA timezone such as Asia/Manila.'; },
     Environment: function (v) { return v === 'PROTOTYPE' || v === 'PRODUCTION' ? '' : 'Use PROTOTYPE or PRODUCTION.'; },
-    TeamLeadEditDays: function (v) { return /^\d{1,3}$/.test(v) ? '' : 'Enter a whole number of days (0 = no limit).'; }
+    TeamLeadEditDays: function (v) { return /^\d{1,3}$/.test(v) ? '' : 'Enter a whole number of days (0 = no limit).'; },
+    SessionHours: function (v) { return /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 168 ? '' : 'Enter a number of hours from 1 to 168 (7 days).'; }
   };
   H.saveSettings = { write: true, admin: true, fn: function (ctx, p) {
     var ch = p.changes || {}, errors = {}, cur = ctx.settings, clean = {};
@@ -1439,7 +1441,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
 <script>
 
 /* =====================================================================
- * AGS COACHING HUB — APPLICATION
+ * AGS ATTENDANCE HUB — APPLICATION
  * ===================================================================== */
 (function () {
   'use strict';
@@ -1627,17 +1629,31 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     }
   };
   function HttpTransport() { }
-  HttpTransport.prototype.call = function (action, payload, requestId) {
-    return getToken().then(function (tok) {
+  // A session pass (from the server, after a Google sign-in) is kept on this device and sent instead of a Google token
+  // until it expires (Settings → Session length). If the server refuses it, it is dropped and the request is retried
+  // once with a Google sign-in.
+  var SESS_KEY = 'ags_att_session';
+  function getSession() { var s = lsGet(SESS_KEY, null); return s && s.t && s.x * 1000 - Date.now() > 60000 ? s : null; }
+  function saveSession(sess) { if (sess && sess.token && sess.exp) lsSet(SESS_KEY, { t: sess.token, x: sess.exp, p: S.picture || (getSession() || {}).p || '' }); }
+  function clearSession() { lsDel(SESS_KEY); }
+  function credential() { var s = getSession(); if (s) return Promise.resolve({ sessionToken: s.t }); return getToken().then(function (tok) { return { idToken: tok }; }); }
+  HttpTransport.prototype.call = function (action, payload, requestId, retried) {
+    var self = this;
+    return credential().then(function (cred) {
       var ctl = window.AbortController ? new AbortController() : null, timer = setTimeout(function () { if (ctl) ctl.abort(); }, /^(bootstrap|getDays)$/.test(action) ? 150000 : 45000);   // a full year of days can take a while
       return fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, credentials: 'omit', redirect: 'follow', signal: ctl ? ctl.signal : undefined,
-        body: JSON.stringify({ action: action, payload: payload, requestId: requestId, idToken: tok }) })
+        body: JSON.stringify({ action: action, payload: payload, requestId: requestId, idToken: cred.idToken, sessionToken: cred.sessionToken }) })
         .then(function (r) {
           clearTimeout(timer);
           if (!r.ok) { var ne = netErr('Google did not return a response (HTTP ' + r.status + '). This is usually temporary.'); ne.httpStatus = r.status; throw ne; }
           return r.json().catch(function () { throw netErr('The server returned an unexpected response. Check API_URL and that the web app is deployed with the documented access setting.'); });
         }, function (e) { clearTimeout(timer); throw netErr(e && e.name === 'AbortError' ? 'The request timed out.' : 'Could not reach the server. Check your connection.'); })
-        .then(function (j) { if (!j || typeof j.ok !== 'boolean') throw netErr('Unexpected response from the server.'); if (!j.ok) throw j.error; return j.data; });
+        .then(function (j) {
+          if (!j || typeof j.ok !== 'boolean') throw netErr('Unexpected response from the server.');
+          if (!j.ok) { if (cred.sessionToken && j.error && j.error.code === 'UNAUTHENTICATED' && !retried) { clearSession(); return self.call(action, payload, requestId, true); } throw j.error; }
+          if (j.session) saveSession(j.session);
+          return j.data;
+        });
     });
   };
   function GasTransport() { }
@@ -1781,7 +1797,7 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
       if (!S.user) startServer('http');
     },
     button: function (el) { google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 }); },
-    signOut: function () { try { google.accounts.id.disableAutoSelect(); } catch (e) { } S.token = null; S.tokenExp = 0; S.picture = ''; clearToken(); }
+    signOut: function () { try { google.accounts.id.disableAutoSelect(); } catch (e) { } S.token = null; S.tokenExp = 0; S.picture = ''; clearToken(); clearSession(); }
   };
   var TOKEN_KEY = 'ags_idt';
   var SS = (function () { try { var k = '__ags_s'; sessionStorage.setItem(k, '1'); sessionStorage.removeItem(k); return sessionStorage; } catch (e) { return null; } })();
@@ -1919,14 +1935,14 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
           }).join('') + '</div><div class="row" style="margin-top:10px"><span class="small muted">Demo data generated for ' + esc(fmtDate(S.demoT.state.generatedFor)) + '.</span><button class="btn btn-sm btn-ghost" data-act="demoResetLogin">Reset demo data</button></div></section>';
       } catch (e) { demoHtml = '<div class="note bad">The demo could not start: ' + esc(e.message) + '</div>'; }
     }
-    $('#app').innerHTML = '<div class="login"><section class="login-side"><div class="brand" style="border:0;padding:0"><div class="brand-mark" role="img" aria-label="Alliance Global Solutions logo"></div><div class="brand-name">Coaching Hub<small>Alliance Global Solutions</small></div></div>' +
+    $('#app').innerHTML = '<div class="login"><section class="login-side"><div class="brand" style="border:0;padding:0"><div class="brand-mark" role="img" aria-label="Alliance Global Solutions logo"></div><div class="brand-name">Attendance Hub<small>Alliance Global Solutions</small></div></div>' +
       '<div><h1>Attendance, recorded once and counted the same way for everyone.</h1><p>One place for team leads to record attendance, and for managers and agents to see attendance, tardiness, absences and leave.</p>' +
       '<ul><li>The same attendance, shrinkage and KPI tier rules as before</li><li>Tardy watchlist, waivers, absence and leave reports</li><li>Every change recorded with who and when</li></ul></div>' +
       '<p class="small" style="color:#8193AE">Access is limited to registered company Google accounts. Every change is audited.</p></section>' +
       '<main class="login-main" id="main"><section class="login-card" aria-labelledby="signin-h"><h2 id="signin-h">Sign in</h2>' +
       (err ? '<div class="note bad" role="alert" style="margin:10px 0">' + esc(err.message || String(err)) + '</div>' : '') +
       (live ? '<p class="muted small">Use your company Google account' + (CFG.ALLOWED_DOMAIN ? ' (@' + esc(CFG.ALLOWED_DOMAIN) + ')' : '') + '.</p><div id="gis-btn" style="margin-top:12px;min-height:44px"><span class="spinner"></span>Loading Google sign-in…</div>'
-        : '<div class="note warn" style="margin-top:10px">The live backend is not configured in this copy of the app. Missing: <strong>' + esc(missing.join(', ')) + '</strong>. An administrator sets these in the <code>AGS_CONFIG</code> block at the top of AGS_Coaching_Hub.html (see DEPLOYMENT.md).</div>') +
+        : '<div class="note warn" style="margin-top:10px">The live backend is not configured in this copy of the app. Missing: <strong>' + esc(missing.join(', ')) + '</strong>. An administrator sets these in the <code>AGS_CONFIG</code> block at the top of index.html (see DEPLOYMENT.md).</div>') +
       '</section>' + demoHtml + '</main></div>';
     if (live) {
       Auth.load().then(function () { var el = $('#gis-btn'); if (!el) return; el.innerHTML = ''; Auth.button(el); if (!err) { try { google.accounts.id.prompt(); } catch (e) { } } },
@@ -2673,8 +2689,8 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
     rules: function () {
       var keys = Object.keys(C.DEFAULT_SETTINGS);
       return '<div class="page-head"><div><p>Changes apply immediately for everyone and are recorded in the audit log.</p></div></div><section class="panel"><div class="panel-b"><div class="fgrid">' + keys.map(function (k) {
-        var v = S.settings[k], id = 'st-' + k, input = k === 'TeamLeadEditDays' ? '<input id="' + id + '" class="input" type="number" min="0" max="999" data-st="' + k + '" value="' + esc(v) + '">' : k === 'Environment' ? '<select id="' + id + '" class="input" data-st="' + k + '">' + opts(['PROTOTYPE', 'PRODUCTION'], v) + '</select>' : '<input id="' + id + '" class="input" data-st="' + k + '" value="' + esc(v) + '">';
-        return '<div><label class="lbl" for="' + id + '">' + esc(({ Timezone: 'Timezone', Environment: 'Environment', TeamLeadEditDays: 'Team Lead edit window (days)' })[k] || k) + '</label>' + input + '<div class="hint">' + esc(C.DEFAULT_SETTINGS[k][1]) + '</div><div class="err" id="e-' + k + '" hidden></div></div>';
+        var v = S.settings[k], id = 'st-' + k, input = k === 'TeamLeadEditDays' ? '<input id="' + id + '" class="input" type="number" min="0" max="999" data-st="' + k + '" value="' + esc(v) + '">' : k === 'SessionHours' ? '<input id="' + id + '" class="input" type="number" min="1" max="168" data-st="' + k + '" value="' + esc(v) + '">' : k === 'Environment' ? '<select id="' + id + '" class="input" data-st="' + k + '">' + opts(['PROTOTYPE', 'PRODUCTION'], v) + '</select>' : '<input id="' + id + '" class="input" data-st="' + k + '" value="' + esc(v) + '">';
+        return '<div><label class="lbl" for="' + id + '">' + esc(({ Timezone: 'Timezone', Environment: 'Environment', TeamLeadEditDays: 'Team Lead edit window (days)', SessionHours: 'Session length (hours): how long people stay signed in' })[k] || k) + '</label>' + input + '<div class="hint">' + esc(C.DEFAULT_SETTINGS[k][1]) + '</div><div class="err" id="e-' + k + '" hidden></div></div>';
       }).join('') + '</div><div class="row" style="margin-top:16px"><button class="btn btn-primary" data-act="saveSettings">Save settings</button></div></div></section>';
     },
     audit: function (f) {
@@ -2827,7 +2843,8 @@ if (typeof module !== 'undefined' && module.exports) { module.exports = MemoryRe
   window.addEventListener('beforeunload', function (e) { var m = topModal(); if (m && m._form && m._form.dirty) { e.preventDefault(); e.returnValue = ''; } });
   function boot() {
     if (window.google && google.script && google.script.run) { startServer('gas'); return; }
-    if (CFG.API_URL && CFG.GOOGLE_CLIENT_ID && restoreToken()) {
+    var sess = CFG.API_URL && CFG.GOOGLE_CLIENT_ID ? getSession() : null; if (sess && !S.picture && sess.p) S.picture = sess.p;
+    if (CFG.API_URL && CFG.GOOGLE_CLIENT_ID && (restoreToken() || sess)) {
       startServer('http');                       // refresh keeps you signed in for this tab
       Auth.load().catch(function () { });        // ready for re-sign-in when the token expires
       return;
